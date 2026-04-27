@@ -1,0 +1,42 @@
+<table>
+  <thead>
+    <tr>
+      <th>When</th>
+      <th>Workout</th>
+      <th>State</th>
+      <th>Seats</th>
+      <th>Last poll</th>
+      <th>Message</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for w in watchers %}
+    <tr>
+      <td>{{ w.event_starts_at | local }}</td>
+      <td>{{ w.event_label }}</td>
+      <td><span class="pill {{ w.state }}">{{ w.state }}</span></td>
+      <td>
+        {% if w.last_seen_capacity %}
+          {{ w.last_seen_capacity[0] }}/{{ w.last_seen_capacity[1] }}
+        {% else %}—{% endif %}
+      </td>
+      <td class="small muted">{{ w.last_polled_at | since }}</td>
+      <td class="small muted">{{ w.message }}</td>
+      <td>
+        {% if w.state in ['queued','sleeping','polling','waitlist'] %}
+          <form class="inline" method="post" action="/watchers/{{ w.event_id }}/cancel">
+            <button type="submit" class="ghost">Cancel</button>
+          </form>
+        {% else %}
+          <form class="inline" method="post" action="/watchers/{{ w.event_id }}/remove">
+            <button type="submit" class="ghost">Clear</button>
+          </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="muted">No active watchers. Click <em>Book</em> on an event to start one.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

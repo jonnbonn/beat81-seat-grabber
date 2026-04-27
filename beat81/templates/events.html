@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<form class="filters" method="get" action="/">
+  <div>
+    <label for="city">City code</label>
+    <input id="city" name="city" value="{{ city }}" placeholder="BER, MUC, …">
+  </div>
+  <div>
+    <label for="days">Days ahead</label>
+    <input id="days" name="days" type="number" min="1" max="14" value="{{ days }}">
+  </div>
+  <button type="submit">Filter</button>
+  <span class="hint" style="margin-left:auto">Polling starts {{ time_before_min }} min before each class.</span>
+</form>
+
+<table>
+  <thead>
+    <tr>
+      <th>When</th>
+      <th>Workout</th>
+      <th>Location</th>
+      <th>Coach</th>
+      <th>Seats</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for ev in events %}
+    <tr>
+      <td>{{ ev.starts_at | local }}</td>
+      <td>{{ ev.name }}</td>
+      <td>{{ ev.location }}</td>
+      <td>{{ ev.coach }}</td>
+      <td>{{ ev.current }}/{{ ev.max }}</td>
+      <td>
+        {% if ev.is_cancelled %}
+          <span class="pill cancelled">cancelled</span>
+        {% elif ev.is_full %}
+          <span class="pill full">full</span>
+        {% else %}
+          <span class="pill open">open</span>
+        {% endif %}
+        {% if ev.watcher_state %}
+          <span class="pill {{ ev.watcher_state }}">{{ ev.watcher_state }}</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if ev.is_cancelled %}
+          <button disabled>—</button>
+        {% elif ev.watcher_state in ['queued','sleeping','polling','waitlist'] %}
+          <a class="btn ghost" href="/bookings">Watching…</a>
+        {% elif ev.watcher_state == 'booked' %}
+          <span class="pill booked">booked</span>
+        {% else %}
+          <form class="inline" method="post" action="/grab/{{ ev.id }}">
+            <button type="submit">{% if ev.is_full %}Watch &amp; book{% else %}Book{% endif %}</button>
+          </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="muted">No events in range.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+<h2 style="margin-top:0">Active watchers</h2>
+<div hx-get="/watchers/fragment" hx-trigger="load, every 3s" hx-swap="innerHTML">
+  {% include "_watchers.html" %}
+</div>
+
+<h2 style="margin-top:32px">My upcoming bookings</h2>
+<table>
+  <thead>
+    <tr>
+      <th>When</th>
+      <th>Workout</th>
+      <th>Location</th>
+      <th>Coach</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in tickets %}
+    <tr>
+      <td>{% if t.starts_at %}{{ t.starts_at | local }}{% else %}—{% endif %}</td>
+      <td>{{ t.name }}</td>
+      <td>{{ t.location }}</td>
+      <td>{{ t.coach }}</td>
+      <td>
+        {% if t.is_waitinglist %}
+          <span class="pill waitlist">waitlist</span>
+        {% else %}
+          <span class="pill booked">{{ t.status }}</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">No upcoming bookings.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

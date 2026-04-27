@@ -1,0 +1,22 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# JWT cache
+*.token.json
+.cache/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
