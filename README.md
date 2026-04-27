@@ -1,4 +1,4 @@
-# Beat81 grabber
+# Beat81 seat grabber
 
 A tiny self-hosted web app that watches Beat81 workouts and books a seat the
 moment one opens up.
