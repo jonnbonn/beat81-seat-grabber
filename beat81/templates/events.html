@@ -48,7 +48,7 @@
       <td>
         {% if ev.is_cancelled %}
           <button disabled>—</button>
-        {% elif ev.watcher_state in ['queued','sleeping','polling','waitlist'] %}
+        {% elif ev.watcher_state in ['queued','sleeping','polling','waitlist','offered'] %}
           <a class="btn ghost" href="/bookings">Watching…</a>
         {% elif ev.watcher_state == 'booked' %}
           <span class="pill booked">booked</span>

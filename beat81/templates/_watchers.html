@@ -24,7 +24,7 @@
       <td class="small muted">{{ w.last_polled_at | since }}</td>
       <td class="small muted">{{ w.message }}</td>
       <td>
-        {% if w.state in ['queued','sleeping','polling','waitlist'] %}
+        {% if w.state in ['queued','sleeping','polling','waitlist','offered'] %}
           <form class="inline" method="post" action="/watchers/{{ w.event_id }}/cancel">
             <button type="submit" class="ghost">Cancel</button>
           </form>

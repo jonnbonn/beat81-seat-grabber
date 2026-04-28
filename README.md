@@ -13,10 +13,14 @@ moment one opens up.
   Each row has a **Book** button (or **Watch & book** when full).
 - **Bookings** page — your current Beat81 bookings + a live status board for
   every active watcher (auto-refreshes every 3 s via HTMX).
-- Background watchers per workout: sleep until `B81_TIME_BEFORE_EVENT`
-  seconds before class start, then poll the public event endpoint every
-  2–5 s and `POST /tickets` the moment `current_participants_count <
-  max_participants`. Stops 5 min after class start.
+- Background watchers per workout: poll the public event endpoint
+  immediately on a slow cadence (5–15 s) and switch to fast cadence (2–5 s)
+  inside the last `B81_TIME_BEFORE_EVENT` seconds before class. The moment
+  `current_participants_count < max_participants` it promotes your waitlist
+  ticket to a confirmed booking via `POST /tickets/{id}/status` (the same
+  call the official Beat81 app fires when you tap "Confirm"). Stops 5 min
+  after class start, or as soon as Beat81 returns a terminal rejection
+  (e.g. daily-limit exceeded).
 
 ## How it fits together
 
@@ -30,6 +34,7 @@ flowchart LR
   ui -- search / list --> b81[(Beat81 API<br/>api.production.b81.io)]
   w1 -- GET /events/:id --> b81
   w1 -- POST /tickets --> b81
+  w1 -- POST /tickets/:id/status --> b81
   w2 -- GET /events/:id --> b81
   w2 -- POST /tickets --> b81
 
@@ -52,18 +57,23 @@ sequenceDiagram
   UI-->>U: 303 → /bookings
   W->>B: GET /events/{id}
   W->>B: POST /tickets {user_id, event_id}
-  alt seat free → booked
+  alt seat free → directly booked
     B-->>W: 201 ticket (is_waitinglist=false)
     W-->>U: state = booked (+ optional ntfy push)
-  else full → server may queue on waitlist
-    B-->>W: 201 ticket (is_waitinglist=true) or error
-    W->>W: sleep until start − B81_TIME_BEFORE_EVENT
-    loop every 2–5s until start +5min
+  else event full → on waitlist
+    B-->>W: 201 ticket (is_waitinglist=true)
+    W-->>U: state = waitlist
+    loop slow (5–15s), fast (2–5s) inside window
       W->>B: GET /events/{id}
       alt current < max
-        W->>B: POST /tickets
-        B-->>W: 201 ticket
-        W-->>U: state = booked
+        W->>B: POST /tickets/{ticket_id}/status<br/>{status_name:"booked"}
+        alt 200 → promoted
+          B-->>W: 200 transition
+          W-->>U: state = booked + push
+        else 422 terminal rule (e.g. daily limit)
+          B-->>W: 422 {code: ...}
+          W-->>U: state = failed (stop polling)
+        end
       else still full
         W->>W: sleep, jittered
       end
@@ -76,17 +86,18 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
   [*] --> queued
-  queued --> sleeping: pre-poll attempt didn't book
-  queued --> booked: seat already free
-  queued --> waitlist: server queued me
-  sleeping --> polling: T-B81_TIME_BEFORE_EVENT reached
-  polling --> booked: current<max & POST /tickets ok
+  queued --> booked: seat free, POST /tickets returned non-waitlist ticket
+  queued --> waitlist: event full → POST /tickets returned waitlist ticket
+  queued --> polling: pre-poll attempt didn't book
+  polling --> booked: current<max & promote ok
+  polling --> waitlist: pre-book attempt landed on waitlist
   polling --> failed: event cancelled by Beat81
   polling --> expired: 5 min past start
-  sleeping --> cancelled: user clicked Cancel
   polling --> cancelled: user clicked Cancel
+  waitlist --> booked: current<max & POST /tickets/{id}/status returned 200
+  waitlist --> failed: terminal 4xx from promote (e.g. qualitrain_no_workout_on_same_day)
+  waitlist --> cancelled: user clicked Cancel
   booked --> [*]
-  waitlist --> polling: keep racing for confirmed seat
   failed --> [*]
   expired --> [*]
   cancelled --> [*]
@@ -102,9 +113,19 @@ Base: `https://api.production.b81.io/api` (FeathersJS).
 | `GET`  | `/events?…`        | none | search |
 | `GET`  | `/events/{id}`     | none | live participant count |
 | `GET`  | `/tickets?user_id=…` | bearer | your bookings (incl. waitlist) |
-| `POST` | `/tickets` | bearer | book / join waitlist (`{user_id, event_id}`) |
+| `POST` | `/tickets` | bearer | book / join waitlist (`{user_id, event_id}`) — idempotent: if you already hold a ticket for that event the same one is returned |
+| `GET`  | `/tickets/{id}` | bearer | live status of one of your tickets |
+| `POST` | `/tickets/{id}/status` | bearer | **promote a waitlist ticket** — body `{"status_name": "booked"}` returns 200 + status transition. The exact call the Beat81 app fires when you tap "Confirm". |
 
-No WebSocket / push — polling is the only option.
+What does **not** work for end-users (returns 403/404):
+`PATCH /tickets/{id}`, `DELETE /tickets/{id}`, `GET /offers`,
+`PATCH /v2/tickets/{id}`, `DELETE /v2/tickets/{id}`, and every
+`/tickets/{id}/{confirm,accept,promote,redeem,checkin}` variant.
+
+No WebSocket / push — polling is the only option. Per Beat81's [help docs](https://support.beat81.com/en/articles/82678-how-does-the-waiting-list-work)
+the waitlist is *first-come-first-served*: when a seat opens, **every**
+waitlist user gets pinged simultaneously and whoever fires the promote call
+first wins.
 
 ## Run it (Docker)
 
@@ -133,22 +154,37 @@ export B81_EMAIL=... B81_PASSWORD=...
 | `B81_EMAIL` | — | Beat81 login (required) |
 | `B81_PASSWORD` | — | Beat81 password (required) |
 | `B81_PORT` | `8000` | port the web UI listens on (host + container) |
-| `B81_TIME_BEFORE_EVENT` | `1800` | seconds before class to start fast polling |
-| `B81_POLL_MIN_SECS` | `2` | min interval between polls (jittered) |
-| `B81_POLL_MAX_SECS` | `5` | max interval between polls |
+| `B81_TIME_BEFORE_EVENT` | `1800` | seconds before class when polling switches from slow to fast cadence |
+| `B81_POLL_MIN_SECS` | `2` | fast-cadence min interval (jittered) — used inside the window |
+| `B81_POLL_MAX_SECS` | `5` | fast-cadence max interval |
+| `B81_POLL_SLOW_MIN_SECS` | `5` | slow-cadence min interval — used from watcher start until the window |
+| `B81_POLL_SLOW_MAX_SECS` | `15` | slow-cadence max interval |
 | `B81_DEFAULT_CITY` | — | pre-fill the events filter (e.g. `BER`, `MUC`) |
 | `B81_NTFY_TOPIC` | — | optional [ntfy.sh](https://ntfy.sh) topic for phone push |
 | `B81_TOKEN_CACHE` | `~/.cache/beat81/token.json` (`/data/token.json` in Docker) | JWT cache path |
+| `B81_VERBOSE` | `1` | log every Beat81 API request and response to stdout (set to `0` to silence) |
+| `B81_LOG_RESP_TRUNC` | `600` | bytes of each API response to keep in the log line (full responses get a one-line `summary>` underneath) |
 
 ## Notes & caveats
 
-- **Rate limits unknown.** 2-second polling for ~30 minutes = ~900 requests
-  per watcher per session. Lengthen `B81_POLL_MIN_SECS` if you get throttled.
+- **Rate limits unknown.** Slow cadence is one `GET /events/{id}` + one
+  `GET /tickets/{id}` every 5–15 s, fast cadence every 2–5 s inside the
+  window. Lengthen `B81_POLL_MIN_SECS` / `B81_POLL_SLOW_MIN_SECS` if you
+  see throttling.
 - This is a private API — Beat81 can change or block it at any time.
-- `POST /tickets` payload `{user_id, event_id}` confirmed working.
+- **Membership-rule rejections are terminal.** If `POST /tickets/{id}/status`
+  returns a 422 with one of the known codes (`qualitrain_no_workout_on_same_day`,
+  `no_credits`, `event_already_started`, …) the watcher surfaces the message
+  and stops polling — retrying won't help. Edit `_TERMINAL_PROMOTE_CODES` in
+  `beat81/watcher.py` if Beat81 introduces a new code you want to handle.
 - Single-user only: there is no auth on the web UI itself. Don't expose the
   configured port to the internet without putting it behind something like
   Tailscale, a Cloudflare tunnel, or basic auth.
+- The mobile app's "Confirm" path was discovered by reading a real network
+  request from `app.beat81.com`. If Beat81 changes the endpoint or payload
+  shape this script will break — you'd repeat the discovery: open the web
+  app's DevTools Network tab, tap Confirm on a real waitlist offer, and
+  copy the new `Method`, `URL`, and `Body` into `beat81/api.py`.
 
 ## Disclaimer
 

@@ -22,8 +22,10 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
-POLL_MIN = _env_float("B81_POLL_MIN_SECS", 2.0)
-POLL_MAX = _env_float("B81_POLL_MAX_SECS", 5.0)
+FAST_MIN = _env_float("B81_POLL_MIN_SECS", 2.0)
+FAST_MAX = _env_float("B81_POLL_MAX_SECS", 5.0)
+SLOW_MIN = _env_float("B81_POLL_SLOW_MIN_SECS", 5.0)
+SLOW_MAX = _env_float("B81_POLL_SLOW_MAX_SECS", 15.0)
 TIME_BEFORE = _env_float("B81_TIME_BEFORE_EVENT", 1800)  # seconds; default 30 min
 NTFY_TOPIC = os.environ.get("B81_NTFY_TOPIC")
 
@@ -47,7 +49,7 @@ class WatcherState:
     event_id: str
     event_label: str
     event_starts_at: datetime
-    state: str = "queued"          # queued|sleeping|polling|booked|waitlist|failed|cancelled|expired
+    state: str = "queued"          # queued|polling|waitlist|offered|booked|failed|cancelled|expired
     message: str = ""
     last_seen_capacity: tuple[int, int] | None = None
     last_polled_at: datetime | None = None
@@ -55,11 +57,17 @@ class WatcherState:
     finished_at: datetime | None = None
     log: list[str] = field(default_factory=list)
     cancel_event: threading.Event = field(default_factory=threading.Event)
+    waitlist_ticket_id: str | None = None
+    last_claim_at: datetime | None = None
 
-    def add_log(self, line: str) -> None:
+    def add_log(self, line: str, *, echo: bool = True) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
-        self.log.append(f"[{ts}] {line}")
+        entry = f"[{ts}] {line}"
+        self.log.append(entry)
         del self.log[:-50]
+        if echo:
+            # Also surface to stdout so docker logs shows it.
+            print(f"watcher[{self.event_id[:8]}] {line}", flush=True)
 
 
 class WatcherManager:
@@ -81,7 +89,7 @@ class WatcherManager:
     def start(self, event_id: str) -> WatcherState:
         with self._lock:
             existing = self._watchers.get(event_id)
-            if existing and existing.state in {"queued", "sleeping", "polling"}:
+            if existing and existing.state in {"queued", "polling", "waitlist", "offered"}:
                 return existing
             ev = api.fetch_event(event_id)
             state = WatcherState(
@@ -108,7 +116,7 @@ class WatcherManager:
     def remove(self, event_id: str) -> bool:
         with self._lock:
             state = self._watchers.get(event_id)
-            if state and state.state in {"queued", "sleeping", "polling"}:
+            if state and state.state in {"queued", "polling", "waitlist", "offered"}:
                 state.cancel_event.set()
             self._watchers.pop(event_id, None)
             self._threads.pop(event_id, None)
@@ -120,22 +128,155 @@ class WatcherManager:
         """Sleep but wake up early if cancelled. Returns True if cancelled."""
         return state.cancel_event.wait(secs)
 
-    def _try_book(self, state: WatcherState, sess: api.Session) -> bool:
+    @staticmethod
+    def _ticket_is_waitlist(ticket: dict[str, Any], event_snapshot: dict[str, Any] | None) -> bool:
+        """`is_waitinglist` can be missing/false on the create response while
+        the status job runs. Cross-check with status_name and live capacity."""
+        if ticket.get("is_waitinglist"):
+            return True
+        status = ((ticket.get("current_status") or {}).get("status_name") or "").lower()
+        if "waitinglist" in status or "waitlist" in status:
+            return True
+        if event_snapshot:
+            cur = event_snapshot.get("current_participants_count") or 0
+            mx = event_snapshot.get("max_participants") or 0
+            if mx and cur >= mx:
+                return True
+        return False
+
+    def _try_book(self, state: WatcherState, sess: api.Session,
+                  event_snapshot: dict[str, Any] | None = None) -> bool:
         ok, body = api.create_ticket(sess, state.event_id)
+        state.add_log(f"POST /tickets -> ok={ok} body={str(body)[:300]}")
         if not ok:
-            state.add_log(f"book failed: {body}")
             return False
         ticket = body.get("data", body) if isinstance(body, dict) else {}
-        is_wait = bool(ticket.get("is_waitinglist")) if isinstance(ticket, dict) else False
+        ticket_id = ticket.get("id") if isinstance(ticket, dict) else None
+        # Re-fetch the canonical ticket so we don't trust a half-populated
+        # create response. If that fails we fall back to the response body.
+        if ticket_id:
+            try:
+                ticket = api.get_ticket(sess, ticket_id) or ticket
+            except Exception as e:
+                state.add_log(f"ticket re-fetch after create failed: {e}")
+        is_wait = self._ticket_is_waitlist(ticket, event_snapshot)
         if is_wait:
+            if state.state != "waitlist":
+                state.add_log(f"placed on waitlist (ticket {ticket_id}); will poll for offer/seat")
             state.state = "waitlist"
-            state.message = "On waitlist (server placed). Will keep polling."
-            state.add_log("server placed me on waitlist; continuing to poll")
+            state.message = "On waitlist. Polling for an open seat or an offer."
+            if ticket_id:
+                state.waitlist_ticket_id = ticket_id
             return False
         state.state = "booked"
         state.message = "Booked!"
         state.finished_at = datetime.now(timezone.utc)
-        state.add_log("BOOKED")
+        state.add_log(f"BOOKED (ticket {ticket_id})")
+        notify("Beat81 booked", state.event_label)
+        return True
+
+    def _try_claim_seat(self, state: WatcherState, sess: api.Session,
+                         force: bool = False) -> bool:
+        """Try ticket-level promotion endpoints to convert the existing
+        waitlist ticket into a confirmed one. Throttled unless `force=True`
+        (e.g. ticket status just changed and we want to react immediately)."""
+        if not state.waitlist_ticket_id:
+            return False
+        now = datetime.now(timezone.utc)
+        if not force and state.last_claim_at and (now - state.last_claim_at).total_seconds() < 10:
+            return False
+        state.last_claim_at = now
+        state.add_log(f"attempting direct claim for ticket {state.waitlist_ticket_id}")
+        ok, attempts = api.accept_offer(sess, {"ticket_id": state.waitlist_ticket_id})
+        state.last_offer_attempts = attempts
+        for a in attempts:
+            state.add_log(
+                f"  {a.get('method')} {a.get('path')} body={a.get('body')} "
+                f"-> {a.get('status', a.get('error'))} resp={str(a.get('resp'))[:180]}"
+            )
+        if not ok:
+            state.add_log("claim ladder did not succeed")
+            return False
+        try:
+            t = api.get_ticket(sess, state.waitlist_ticket_id)
+        except Exception as e:
+            state.add_log(f"verify after claim failed: {e}")
+            return False
+        if t.get("is_waitinglist"):
+            state.add_log("claim returned 2xx but ticket still waitlist")
+            return False
+        state.state = "booked"
+        state.message = "Booked via direct claim!"
+        state.finished_at = datetime.now(timezone.utc)
+        state.add_log("BOOKED via direct waitlist claim")
+        notify("Beat81 booked", state.event_label)
+        return True
+
+    # Server-side rejections that won't change on retry — stop polling.
+    _TERMINAL_PROMOTE_CODES = {
+        "qualitrain_no_workout_on_same_day",
+        "no_workout_on_same_day",
+        "no_credits",
+        "no_credit",
+        "membership_expired",
+        "membership_inactive",
+        "user_blocked",
+        "event_already_started",
+        "event_cancelled",
+    }
+
+    def _try_promote(self, state: WatcherState, sess: api.Session) -> bool:
+        """Convert a waitlist ticket into a confirmed booking via
+        POST /tickets/{id}/status {status_name: "booked"} — the same call
+        the official Beat81 app fires when the user taps Confirm."""
+        ticket_id = state.waitlist_ticket_id
+        if not ticket_id:
+            return False
+        try:
+            status, body = api.transition_ticket(sess, ticket_id, "booked")
+        except Exception as e:
+            state.add_log(f"promote error: {e}")
+            return False
+        if status in (200, 201):
+            state.state = "booked"
+            state.message = "Booked!"
+            state.finished_at = datetime.now(timezone.utc)
+            state.add_log(f"BOOKED via /tickets/{ticket_id}/status")
+            notify("Beat81 booked", state.event_label)
+            return True
+        # Non-success. Surface the server message; mark terminal if known.
+        code = (body or {}).get("code") if isinstance(body, dict) else None
+        msg = (body or {}).get("message") if isinstance(body, dict) else None
+        state.add_log(f"promote failed status={status} code={code} msg={msg}")
+        if 400 <= status < 500 and code in self._TERMINAL_PROMOTE_CODES:
+            state.state = "failed"
+            state.message = msg or f"Beat81 rejected booking ({code})"
+            state.finished_at = datetime.now(timezone.utc)
+            notify("Beat81 booking blocked", f"{state.event_label} — {msg or code}")
+            # Signal to the polling loop to exit.
+            state.cancel_event.set()
+            return False
+        return False
+
+    def _check_waitlist_ticket(self, state: WatcherState, sess: api.Session) -> bool:
+        """Poll our own waitlist ticket. End-users cannot promote themselves
+        (PATCH /tickets/{id} → 403, no /accept|/confirm sub-routes exist),
+        so this just watches for beat81's auto-promotion to flip
+        is_waitinglist=false."""
+        if not state.waitlist_ticket_id:
+            return False
+        try:
+            t = api.get_ticket(sess, state.waitlist_ticket_id)
+        except Exception as e:
+            state.add_log(f"ticket poll error: {e}")
+            return False
+        if t.get("is_waitinglist"):
+            return False
+        status = ((t.get("current_status") or {}).get("status_name") or "?").lower()
+        state.state = "booked"
+        state.message = "Auto-promoted from waitlist!"
+        state.finished_at = datetime.now(timezone.utc)
+        state.add_log(f"BOOKED via auto-promotion (status={status})")
         notify("Beat81 booked", state.event_label)
         return True
 
@@ -161,41 +302,10 @@ class WatcherManager:
         state.last_polled_at = datetime.now(timezone.utc)
 
         # Always try once up front. If the seat is open we book immediately;
-        # if it's full we may still get queued onto the waitlist.
+        # if it's full we end up on the waitlist and the loop takes over.
         state.add_log(f"initial capacity {cur}/{mx} — attempting book")
-        if self._try_book(state, sess):
+        if self._try_book(state, sess, event_snapshot=ev):
             return
-
-        # Sleep until polling window opens.
-        while not state.cancel_event.is_set():
-            now = datetime.now(timezone.utc)
-            secs_to_start = (state.event_starts_at - now).total_seconds()
-            secs_to_window = secs_to_start - TIME_BEFORE
-            if secs_to_start < -300:
-                state.state = "expired"
-                state.message = "Event already started."
-                state.finished_at = now
-                state.add_log("event started; giving up")
-                return
-            if secs_to_window <= 0:
-                break
-            state.state = "sleeping"
-            state.message = (
-                f"Polling starts in {int(secs_to_window // 60)} min "
-                f"({int(TIME_BEFORE // 60)} min before class)."
-            )
-            # Wake periodically so the UI shows fresh countdown.
-            if self._sleep(state, min(secs_to_window, 30)):
-                break
-
-        if state.cancel_event.is_set():
-            state.state = "cancelled"
-            state.finished_at = datetime.now(timezone.utc)
-            return
-
-        state.state = "polling"
-        state.message = "Polling for an open seat…"
-        state.add_log("entering polling window")
 
         consecutive_errors = 0
         while not state.cancel_event.is_set():
@@ -223,27 +333,53 @@ class WatcherManager:
             mx = ev.get("max_participants") or 0
             state.last_seen_capacity = (cur, mx)
             state.last_polled_at = datetime.now(timezone.utc)
-            state.message = f"Polling — {cur}/{mx} taken"
 
             now = datetime.now(timezone.utc)
-            mins_to_start = (state.event_starts_at - now).total_seconds() / 60.0
-            if mins_to_start < -5:
+            secs_to_start = (state.event_starts_at - now).total_seconds()
+            if secs_to_start < -300:
                 state.state = "expired"
                 state.message = "Event started; stopping."
                 state.finished_at = now
                 return
 
-            if cur < mx:
-                state.add_log(f"seat open ({cur}/{mx}); booking")
-                if not sess.is_valid():
-                    try:
-                        sess = api.get_session()
-                    except Exception as e:
-                        state.add_log(f"re-login failed: {e}")
-                if self._try_book(state, sess):
-                    return
+            in_fast_window = secs_to_start <= TIME_BEFORE
+            if state.state not in {"waitlist", "offered"}:
+                state.state = "polling"
+            cadence = "fast" if in_fast_window else "slow"
+            mins_left = max(0, int(secs_to_start // 60))
+            state.message = (
+                f"{cadence} poll — {cur}/{mx} taken, {mins_left} min to start"
+            )
+            state.add_log(
+                f"tick state={state.state} {cur}/{mx} ticket={state.waitlist_ticket_id} "
+                f"in_fast_window={in_fast_window} mins_to_start={mins_left}"
+            )
 
-            if self._sleep(state, random.uniform(POLL_MIN, POLL_MAX)):
+            if not sess.is_valid():
+                try:
+                    sess = api.get_session()
+                except Exception as e:
+                    state.add_log(f"re-login failed: {e}")
+
+            # On waitlist? Watch the ticket itself for promotion or status change.
+            if state.waitlist_ticket_id and self._check_waitlist_ticket(state, sess):
+                return
+
+            if cur < mx:
+                state.add_log(f"seat open ({cur}/{mx}); promoting")
+                if state.waitlist_ticket_id:
+                    # We already hold a waitlist ticket — promote it via the
+                    # status endpoint. Plain POST /tickets is idempotent and
+                    # would just hand the waitlist ticket back.
+                    if self._try_promote(state, sess):
+                        return
+                else:
+                    # No waitlist ticket yet — race a fresh booking.
+                    if self._try_book(state, sess, event_snapshot=ev):
+                        return
+
+            lo, hi = (FAST_MIN, FAST_MAX) if in_fast_window else (SLOW_MIN, SLOW_MAX)
+            if self._sleep(state, random.uniform(lo, hi)):
                 break
 
         state.state = "cancelled"
