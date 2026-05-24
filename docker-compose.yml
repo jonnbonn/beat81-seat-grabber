@@ -7,8 +7,6 @@ services:
     ports:
       - "${B81_PORT:-8000}:${B81_PORT:-8000}"
     environment:
-      B81_EMAIL: ${B81_EMAIL:?set B81_EMAIL in .env}
-      B81_PASSWORD: ${B81_PASSWORD:?set B81_PASSWORD in .env}
       B81_PORT: ${B81_PORT:-8000}
       B81_TIME_BEFORE_EVENT: ${B81_TIME_BEFORE_EVENT:-1800}
       B81_POLL_MIN_SECS: ${B81_POLL_MIN_SECS:-2}
@@ -17,8 +15,5 @@ services:
       B81_POLL_SLOW_MAX_SECS: ${B81_POLL_SLOW_MAX_SECS:-15}
       B81_DEFAULT_CITY: ${B81_DEFAULT_CITY:-}
       B81_NTFY_TOPIC: ${B81_NTFY_TOPIC:-}
-    volumes:
-      - beat81-data:/data
-
-volumes:
-  beat81-data:
+      B81_COOKIE_SECURE: ${B81_COOKIE_SECURE:-0}
+      B81_COOKIE_KEY: ${B81_COOKIE_KEY:-}

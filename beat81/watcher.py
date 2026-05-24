@@ -8,7 +8,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -58,7 +58,6 @@ class WatcherState:
     log: list[str] = field(default_factory=list)
     cancel_event: threading.Event = field(default_factory=threading.Event)
     waitlist_ticket_id: str | None = None
-    last_claim_at: datetime | None = None
 
     def add_log(self, line: str, *, echo: bool = True) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
@@ -86,7 +85,13 @@ class WatcherManager:
         with self._lock:
             return self._watchers.get(event_id)
 
-    def start(self, event_id: str) -> WatcherState:
+    def start(
+        self,
+        event_id: str,
+        sess: api.Session,
+        *,
+        refresh: Callable[[], api.Session] | None = None,
+    ) -> WatcherState:
         with self._lock:
             existing = self._watchers.get(event_id)
             if existing and existing.state in {"queued", "polling", "waitlist", "offered"}:
@@ -99,7 +104,10 @@ class WatcherManager:
             )
             self._watchers[event_id] = state
             t = threading.Thread(
-                target=self._run, args=(state,), name=f"watch-{event_id[:8]}", daemon=True
+                target=self._run,
+                args=(state, sess, refresh),
+                name=f"watch-{event_id[:8]}",
+                daemon=True,
             )
             self._threads[event_id] = t
             t.start()
@@ -175,43 +183,6 @@ class WatcherManager:
         notify("Beat81 booked", state.event_label)
         return True
 
-    def _try_claim_seat(self, state: WatcherState, sess: api.Session,
-                         force: bool = False) -> bool:
-        """Try ticket-level promotion endpoints to convert the existing
-        waitlist ticket into a confirmed one. Throttled unless `force=True`
-        (e.g. ticket status just changed and we want to react immediately)."""
-        if not state.waitlist_ticket_id:
-            return False
-        now = datetime.now(timezone.utc)
-        if not force and state.last_claim_at and (now - state.last_claim_at).total_seconds() < 10:
-            return False
-        state.last_claim_at = now
-        state.add_log(f"attempting direct claim for ticket {state.waitlist_ticket_id}")
-        ok, attempts = api.accept_offer(sess, {"ticket_id": state.waitlist_ticket_id})
-        state.last_offer_attempts = attempts
-        for a in attempts:
-            state.add_log(
-                f"  {a.get('method')} {a.get('path')} body={a.get('body')} "
-                f"-> {a.get('status', a.get('error'))} resp={str(a.get('resp'))[:180]}"
-            )
-        if not ok:
-            state.add_log("claim ladder did not succeed")
-            return False
-        try:
-            t = api.get_ticket(sess, state.waitlist_ticket_id)
-        except Exception as e:
-            state.add_log(f"verify after claim failed: {e}")
-            return False
-        if t.get("is_waitinglist"):
-            state.add_log("claim returned 2xx but ticket still waitlist")
-            return False
-        state.state = "booked"
-        state.message = "Booked via direct claim!"
-        state.finished_at = datetime.now(timezone.utc)
-        state.add_log("BOOKED via direct waitlist claim")
-        notify("Beat81 booked", state.event_label)
-        return True
-
     # Server-side rejections that won't change on retry — stop polling.
     _TERMINAL_PROMOTE_CODES = {
         "qualitrain_no_workout_on_same_day",
@@ -258,37 +229,12 @@ class WatcherManager:
             return False
         return False
 
-    def _check_waitlist_ticket(self, state: WatcherState, sess: api.Session) -> bool:
-        """Poll our own waitlist ticket. End-users cannot promote themselves
-        (PATCH /tickets/{id} → 403, no /accept|/confirm sub-routes exist),
-        so this just watches for beat81's auto-promotion to flip
-        is_waitinglist=false."""
-        if not state.waitlist_ticket_id:
-            return False
-        try:
-            t = api.get_ticket(sess, state.waitlist_ticket_id)
-        except Exception as e:
-            state.add_log(f"ticket poll error: {e}")
-            return False
-        if t.get("is_waitinglist"):
-            return False
-        status = ((t.get("current_status") or {}).get("status_name") or "?").lower()
-        state.state = "booked"
-        state.message = "Auto-promoted from waitlist!"
-        state.finished_at = datetime.now(timezone.utc)
-        state.add_log(f"BOOKED via auto-promotion (status={status})")
-        notify("Beat81 booked", state.event_label)
-        return True
-
-    def _run(self, state: WatcherState) -> None:
-        try:
-            sess = api.get_session()
-        except Exception as e:
-            state.state = "failed"
-            state.message = f"login failed: {e}"
-            state.add_log(state.message)
-            return
-
+    def _run(
+        self,
+        state: WatcherState,
+        sess: api.Session,
+        refresh: Callable[[], api.Session] | None = None,
+    ) -> None:
         try:
             ev = api.fetch_event(state.event_id)
         except Exception as e:
@@ -356,14 +302,27 @@ class WatcherManager:
             )
 
             if not sess.is_valid():
-                try:
-                    sess = api.get_session()
-                except Exception as e:
-                    state.add_log(f"re-login failed: {e}")
-
-            # On waitlist? Watch the ticket itself for promotion or status change.
-            if state.waitlist_ticket_id and self._check_waitlist_ticket(state, sess):
-                return
+                if refresh is not None:
+                    try:
+                        sess = refresh()
+                        state.add_log(
+                            f"refreshed session; new exp in "
+                            f"{int(sess.expires_at - time.time())}s"
+                        )
+                    except Exception as e:
+                        state.state = "failed"
+                        state.message = f"session refresh failed: {e}"
+                        state.finished_at = datetime.now(timezone.utc)
+                        state.add_log(state.message)
+                        notify("Beat81 session refresh failed", state.event_label)
+                        return
+                else:
+                    state.state = "failed"
+                    state.message = "Session expired — log in again and re-arm this watcher."
+                    state.finished_at = datetime.now(timezone.utc)
+                    state.add_log(state.message)
+                    notify("Beat81 session expired", state.event_label)
+                    return
 
             if cur < mx:
                 state.add_log(f"seat open ({cur}/{mx}); promoting")

@@ -8,7 +8,6 @@ import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 import requests
@@ -17,9 +16,6 @@ API_BASE = "https://api.production.b81.io/api"
 ORIGIN = "https://app.beat81.com"
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64; rv:122.0) Gecko/20100101 Firefox/122.0"
-)
-TOKEN_CACHE = Path(
-    os.environ.get("B81_TOKEN_CACHE", str(Path.home() / ".cache" / "beat81" / "token.json"))
 )
 
 
@@ -172,43 +168,22 @@ class Session:
             )
         r.raise_for_status()
         token = r.json()["data"]["accessToken"]
-        payload = _decode_jwt(token)
-        sess = cls(token=token, user_id=payload["userId"], expires_at=payload["exp"])
-        sess._cache()
+        sess = cls.from_token(token)
         if VERBOSE:
-            print(f"api> login ok user_id={sess.user_id} exp_in={int(payload['exp']-time.time())}s", flush=True)
+            print(
+                f"api> login ok user_id={sess.user_id} "
+                f"exp_in={int(sess.expires_at - time.time())}s",
+                flush=True,
+            )
         return sess
 
     @classmethod
-    def from_cache(cls) -> "Session | None":
-        if not TOKEN_CACHE.exists():
-            return None
-        try:
-            data = json.loads(TOKEN_CACHE.read_text())
-            payload = _decode_jwt(data["token"])
-        except Exception:
-            return None
-        if payload["exp"] < time.time() + 60:
-            return None
-        return cls(token=data["token"], user_id=data["userId"], expires_at=payload["exp"])
-
-    def _cache(self) -> None:
-        TOKEN_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        TOKEN_CACHE.write_text(json.dumps({"token": self.token, "userId": self.user_id}))
+    def from_token(cls, token: str) -> "Session":
+        payload = _decode_jwt(token)
+        return cls(token=token, user_id=payload["userId"], expires_at=payload["exp"])
 
     def is_valid(self) -> bool:
         return self.expires_at > time.time() + 60
-
-
-def get_session() -> Session:
-    sess = Session.from_cache()
-    if sess and sess.is_valid():
-        return sess
-    email = os.environ.get("B81_EMAIL")
-    password = os.environ.get("B81_PASSWORD")
-    if not (email and password):
-        raise RuntimeError("Set B81_EMAIL and B81_PASSWORD env vars.")
-    return Session.login(email, password)
 
 
 def search_events(
@@ -263,60 +238,6 @@ def create_ticket(sess: Session, event_id: str) -> tuple[bool, dict[str, Any]]:
         json_body={"user_id": sess.user_id, "event_id": event_id},
     )
     return (status in (200, 201), body if isinstance(body, dict) else {"raw": body})
-
-
-def list_offers(sess: Session, event_id: str | None = None) -> list[dict[str, Any]]:
-    """GET /offers — known to 403 for end-users; kept for completeness."""
-    params: dict[str, Any] = {
-        "user_id": sess.user_id,
-        "$limit": 50,
-        "$sort[created_at]": -1,
-    }
-    if event_id:
-        params["event_id"] = event_id
-    status, body = _api("GET", "/offers", token=sess.token, params=params)
-    if status != 200:
-        return []
-    return body.get("data", body) if isinstance(body, dict) else []
-
-
-def accept_offer(sess: Session, offer: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
-    """Try several FeathersJS accept patterns in order of likelihood.
-
-    Returns (succeeded, attempts) where `attempts` is the full log so we can
-    learn which shape Beat81 actually expects. The first 2xx wins.
-    """
-    offer_id = offer.get("id")
-    ticket_id = offer.get("ticket_id")
-    candidates: list[tuple[str, str, dict[str, Any]]] = []
-    if offer_id:
-        candidates += [
-            ("PATCH", f"/offers/{offer_id}", {"status": "accepted"}),
-            ("PATCH", f"/offers/{offer_id}", {"status_name": "accepted"}),
-            ("PATCH", f"/offers/{offer_id}", {"accepted": True}),
-            ("PATCH", f"/offers/{offer_id}", {"is_accepted": True}),
-            ("POST",  f"/offers/{offer_id}/accept", {}),
-            ("POST",  f"/offers/{offer_id}/accepted", {}),
-        ]
-    if ticket_id:
-        candidates += [
-            ("PATCH", f"/tickets/{ticket_id}", {"is_waitinglist": False}),
-            ("PATCH", f"/tickets/{ticket_id}", {"status_name": "confirmed"}),
-        ]
-    attempts: list[dict[str, Any]] = []
-    for method, path, body in candidates:
-        try:
-            status, resp = _api(method, path, token=sess.token, json_body=body)
-        except Exception as e:
-            attempts.append({"method": method, "path": path, "body": body, "error": str(e)})
-            continue
-        attempts.append({
-            "method": method, "path": path, "body": body,
-            "status": status, "resp": resp,
-        })
-        if status in (200, 201):
-            return True, attempts
-    return False, attempts
 
 
 def get_ticket(sess: Session, ticket_id: str) -> dict[str, Any]:

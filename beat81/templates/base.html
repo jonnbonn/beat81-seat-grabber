@@ -112,6 +112,11 @@
       <a href="/" class="{% if active_page == 'events' %}active{% endif %}">Events</a>
       <a href="/bookings" class="{% if active_page == 'bookings' %}active{% endif %}">My bookings &amp; watchers</a>
     </nav>
+    {% if active_page != 'login' %}
+    <form method="post" action="/logout" style="margin-left:auto;">
+      <button type="submit" class="ghost">Log out</button>
+    </form>
+    {% endif %}
   </header>
   <main>
     {% block content %}{% endblock %}

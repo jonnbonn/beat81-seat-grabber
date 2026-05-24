@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from fastapi import FastAPI, Form, HTTPException, Request
+import requests
+from cryptography.fernet import Fernet, InvalidToken
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -21,6 +25,42 @@ app = FastAPI(title="Beat81 Grabber")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 DEFAULT_CITY = os.environ.get("B81_DEFAULT_CITY", "")  # e.g. BER, MUC
+
+COOKIE_TOKEN = "b81_token"
+COOKIE_REFRESH = "b81_refresh"
+REFRESH_MAX_AGE = 30 * 24 * 3600  # 30 days
+COOKIE_SECURE = os.environ.get("B81_COOKIE_SECURE", "0") not in {"", "0", "false", "False"}
+
+
+def _build_fernet() -> Fernet:
+    key = os.environ.get("B81_COOKIE_KEY")
+    if not key:
+        key = Fernet.generate_key().decode()
+        print(
+            "api> warning: B81_COOKIE_KEY not set; generated an ephemeral key. "
+            "Remember-me cookies won't survive a restart. To persist, add to .env:\n"
+            f"     B81_COOKIE_KEY={key}",
+            flush=True,
+        )
+    try:
+        return Fernet(key.encode() if isinstance(key, str) else key)
+    except Exception as e:
+        raise RuntimeError(f"B81_COOKIE_KEY is not a valid Fernet key: {e}") from e
+
+
+_FERNET = _build_fernet()
+
+
+def _encrypt_creds(email: str, password: str) -> str:
+    return _FERNET.encrypt(json.dumps({"email": email, "password": password}).encode()).decode()
+
+
+def _decrypt_creds(blob: str) -> tuple[str, str] | None:
+    try:
+        data = json.loads(_FERNET.decrypt(blob.encode()).decode())
+        return data["email"], data["password"]
+    except (InvalidToken, KeyError, ValueError, json.JSONDecodeError):
+        return None
 
 
 def _format_local(dt: datetime) -> str:
@@ -44,6 +84,74 @@ templates.env.filters["local"] = _format_local
 templates.env.filters["since"] = _since
 
 
+class _RedirectToLogin(Exception):
+    pass
+
+
+def require_session(request: Request) -> api.Session:
+    token = request.cookies.get(COOKIE_TOKEN)
+    if token:
+        try:
+            sess = api.Session.from_token(token)
+            if sess.is_valid():
+                return sess
+        except Exception:
+            pass
+    refresh = request.cookies.get(COOKIE_REFRESH)
+    if refresh:
+        creds = _decrypt_creds(refresh)
+        if creds:
+            try:
+                sess = api.Session.login(*creds)
+            except Exception as e:
+                print(f"api> silent refresh failed: {e}", flush=True)
+            else:
+                request.state.fresh_jwt = sess.token
+                request.state.fresh_jwt_max_age = max(0, int(sess.expires_at - time.time()))
+                return sess
+    raise _RedirectToLogin()
+
+
+def _build_refresh(request: Request) -> Callable[[], api.Session] | None:
+    """Closure a watcher thread can call to re-login when its JWT expires.
+    The encrypted blob is captured here; we decrypt only on each refresh
+    so the plaintext password isn't kept resident between refreshes."""
+    blob = request.cookies.get(COOKIE_REFRESH)
+    if not blob:
+        return None
+
+    def refresh() -> api.Session:
+        creds = _decrypt_creds(blob)
+        if not creds:
+            raise RuntimeError("remember-me cookie no longer decryptable")
+        return api.Session.login(*creds)
+
+    return refresh
+
+
+@app.middleware("http")
+async def _attach_fresh_jwt(request: Request, call_next):
+    response = await call_next(request)
+    fresh = getattr(request.state, "fresh_jwt", None)
+    if fresh:
+        response.set_cookie(
+            COOKIE_TOKEN,
+            fresh,
+            max_age=getattr(request.state, "fresh_jwt_max_age", 0),
+            httponly=True,
+            samesite="lax",
+            secure=COOKIE_SECURE,
+        )
+    return response
+
+
+@app.exception_handler(_RedirectToLogin)
+async def _redirect_login_handler(request: Request, exc: _RedirectToLogin) -> Response:
+    resp = RedirectResponse(url="/login", status_code=303)
+    resp.delete_cookie(COOKIE_TOKEN)
+    return resp
+
+
 def _decorate_event(ev: dict[str, Any]) -> dict[str, Any]:
     cur = ev.get("current_participants_count") or 0
     mx = ev.get("max_participants") or 0
@@ -63,11 +171,75 @@ def _decorate_event(ev: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@app.get("/login", response_class=HTMLResponse)
+def login_form(request: Request, error: str | None = None):
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": error, "active_page": "login"},
+    )
+
+
+@app.post("/login")
+def login_submit(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    remember: str | None = Form(None),
+):
+    try:
+        sess = api.Session.login(email, password)
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else "?"
+        msg = f"Beat81 rejected the login (HTTP {status})."
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": msg, "active_page": "login"},
+            status_code=400,
+        )
+    except Exception as e:
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": f"Login failed: {e}", "active_page": "login"},
+            status_code=400,
+        )
+    resp = RedirectResponse(url="/", status_code=303)
+    jwt_max_age = max(0, int(sess.expires_at - datetime.now(timezone.utc).timestamp()))
+    resp.set_cookie(
+        COOKIE_TOKEN,
+        sess.token,
+        max_age=jwt_max_age,
+        httponly=True,
+        samesite="lax",
+        secure=COOKIE_SECURE,
+    )
+    if remember:
+        resp.set_cookie(
+            COOKIE_REFRESH,
+            _encrypt_creds(email, password),
+            max_age=REFRESH_MAX_AGE,
+            httponly=True,
+            samesite="lax",
+            secure=COOKIE_SECURE,
+        )
+    else:
+        resp.delete_cookie(COOKIE_REFRESH)
+    return resp
+
+
+@app.post("/logout")
+def logout():
+    resp = RedirectResponse(url="/login", status_code=303)
+    resp.delete_cookie(COOKIE_TOKEN)
+    resp.delete_cookie(COOKIE_REFRESH)
+    return resp
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(
     request: Request,
     city: str = "",
     days: int = 2,
+    sess: api.Session = Depends(require_session),
 ):
     city = city or DEFAULT_CITY
     now = datetime.now(timezone.utc)
@@ -92,9 +264,8 @@ def index(
 
 
 @app.get("/bookings", response_class=HTMLResponse)
-def bookings(request: Request):
+def bookings(request: Request, sess: api.Session = Depends(require_session)):
     try:
-        sess = api.get_session()
         tickets = api.list_tickets(sess)
     except Exception as e:
         tickets = []
@@ -128,7 +299,7 @@ def bookings(request: Request):
 
 
 @app.get("/watchers/fragment", response_class=HTMLResponse)
-def watchers_fragment(request: Request):
+def watchers_fragment(request: Request, sess: api.Session = Depends(require_session)):
     return templates.TemplateResponse(
         "_watchers.html",
         {"request": request, "watchers": manager.list()},
@@ -136,24 +307,23 @@ def watchers_fragment(request: Request):
 
 
 @app.post("/grab/{event_id}")
-def grab(event_id: str, request: Request):
+def grab(event_id: str, request: Request, sess: api.Session = Depends(require_session)):
+    refresh = _build_refresh(request)
     try:
-        manager.start(event_id)
+        manager.start(event_id, sess, refresh=refresh)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-    if request.headers.get("hx-request"):
-        return RedirectResponse(url="/bookings", status_code=303)
     return RedirectResponse(url="/bookings", status_code=303)
 
 
 @app.post("/watchers/{event_id}/cancel")
-def cancel(event_id: str):
+def cancel(event_id: str, sess: api.Session = Depends(require_session)):
     manager.cancel(event_id)
     return RedirectResponse(url="/bookings", status_code=303)
 
 
 @app.post("/watchers/{event_id}/remove")
-def remove(event_id: str):
+def remove(event_id: str, sess: api.Session = Depends(require_session)):
     manager.remove(event_id)
     return RedirectResponse(url="/bookings", status_code=303)
 
