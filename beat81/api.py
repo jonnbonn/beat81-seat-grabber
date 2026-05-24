@@ -214,6 +214,22 @@ def fetch_event(event_id: str) -> dict[str, Any]:
     return body["data"]
 
 
+def fetch_events_batch(event_ids: list[str]) -> list[dict[str, Any]]:
+    """Batch-poll many events with a single public request. Beat81's events
+    service rejects the FeathersJS $in operator ("Invalid Query") but accepts
+    a repeated ?id=… equality, returning exactly the matching events. URL
+    grows ~50 bytes per id; safe up to ~50 ids per request before hitting
+    typical 8 KB limits — caller should chunk past that."""
+    if not event_ids:
+        return []
+    params: list[tuple[str, Any]] = [("id", x) for x in event_ids]
+    params.append(("$limit", min(100, len(event_ids))))
+    status, body = _api("GET", "/events", params=params)
+    if status != 200:
+        raise RuntimeError(f"fetch_events_batch status={status} body={body}")
+    return body["data"]
+
+
 def list_tickets(sess: Session, only_upcoming: bool = True) -> list[dict[str, Any]]:
     params: dict[str, Any] = {
         "user_id": sess.user_id,

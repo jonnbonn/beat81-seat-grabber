@@ -152,11 +152,11 @@ async def _redirect_login_handler(request: Request, exc: _RedirectToLogin) -> Re
     return resp
 
 
-def _decorate_event(ev: dict[str, Any]) -> dict[str, Any]:
+def _decorate_event(ev: dict[str, Any], user_id: str) -> dict[str, Any]:
     cur = ev.get("current_participants_count") or 0
     mx = ev.get("max_participants") or 0
     starts = api.event_starts_at(ev)
-    watcher = manager.get(ev["id"])
+    watcher = manager.get(user_id, ev["id"])
     return {
         "id": ev["id"],
         "name": ev.get("type", {}).get("name", "?"),
@@ -249,7 +249,7 @@ def index(
         to_date=(now + timedelta(days=days)).isoformat(),
         limit=200,
     )
-    events = [_decorate_event(e) for e in events_raw]
+    events = [_decorate_event(e, sess.user_id) for e in events_raw]
     return templates.TemplateResponse(
         "events.html",
         {
@@ -291,7 +291,7 @@ def bookings(request: Request, sess: api.Session = Depends(require_session)):
         {
             "request": request,
             "tickets": decorated,
-            "watchers": manager.list(),
+            "watchers": manager.list_for(sess.user_id),
             "error": error,
             "active_page": "bookings",
         },
@@ -302,7 +302,7 @@ def bookings(request: Request, sess: api.Session = Depends(require_session)):
 def watchers_fragment(request: Request, sess: api.Session = Depends(require_session)):
     return templates.TemplateResponse(
         "_watchers.html",
-        {"request": request, "watchers": manager.list()},
+        {"request": request, "watchers": manager.list_for(sess.user_id)},
     )
 
 
@@ -310,7 +310,7 @@ def watchers_fragment(request: Request, sess: api.Session = Depends(require_sess
 def grab(event_id: str, request: Request, sess: api.Session = Depends(require_session)):
     refresh = _build_refresh(request)
     try:
-        manager.start(event_id, sess, refresh=refresh)
+        manager.start(sess.user_id, event_id, sess, refresh=refresh)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     return RedirectResponse(url="/bookings", status_code=303)
@@ -318,13 +318,13 @@ def grab(event_id: str, request: Request, sess: api.Session = Depends(require_se
 
 @app.post("/watchers/{event_id}/cancel")
 def cancel(event_id: str, sess: api.Session = Depends(require_session)):
-    manager.cancel(event_id)
+    manager.cancel(sess.user_id, event_id)
     return RedirectResponse(url="/bookings", status_code=303)
 
 
 @app.post("/watchers/{event_id}/remove")
 def remove(event_id: str, sess: api.Session = Depends(require_session)):
-    manager.remove(event_id)
+    manager.remove(sess.user_id, event_id)
     return RedirectResponse(url="/bookings", status_code=303)
 
 
