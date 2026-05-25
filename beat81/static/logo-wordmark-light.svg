@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" width="400" height="120">
+  
+  <g transform="translate(0, 0)">
+    <text x="0" y="92" font-family="Big Shoulders Display, Oswald, Impact, sans-serif" font-weight="900" font-size="120" fill="#F5EFE3" letter-spacing="-2">GRA</text>
+    <g transform="translate(178, 12)">
+      <rect x="0" y="0" width="148" height="96" fill="#FF4D1F" stroke="#F5EFE3" stroke-width="4"></rect>
+      <circle cx="10" cy="10" r="3" fill="#F5EFE3"></circle>
+      <circle cx="138" cy="10" r="3" fill="#F5EFE3"></circle>
+      <circle cx="10" cy="86" r="3" fill="#F5EFE3"></circle>
+      <circle cx="138" cy="86" r="3" fill="#F5EFE3"></circle>
+      <text x="74" y="80" font-family="Big Shoulders Display, Oswald, Impact, sans-serif" font-weight="900" font-size="100" fill="#F5EFE3" text-anchor="middle" letter-spacing="-2">BB</text>
+    </g>
+    <text x="332" y="92" font-family="Big Shoulders Display, Oswald, Impact, sans-serif" font-weight="900" font-size="120" fill="#F5EFE3" letter-spacing="-2">Y</text>
+  </g>
+</svg>

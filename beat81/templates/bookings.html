@@ -1,41 +1,65 @@
 {% extends "base.html" %}
+{% block title %}Grabby — watches &amp; bibs{% endblock %}
 {% block content %}
+
+<div class="grb-topbar">
+  <div>
+    <div class="grb-eyebrow">· WATCHES &amp; BIBS</div>
+    <h1>We refresh.<br>You rest.</h1>
+  </div>
+</div>
+
 {% if error %}<div class="err">{{ error }}</div>{% endif %}
 
-<h2 style="margin-top:0">Active watchers</h2>
-<div hx-get="/watchers/fragment" hx-trigger="load, every 3s" hx-swap="innerHTML">
+<div class="section-head">
+  <span>Active watches</span>
+  <span class="count">{{ "%02d" | format(watchers|length) }}</span>
+</div>
+
+<div id="watchers-pane"
+     class="stack"
+     hx-get="/watchers/fragment"
+     hx-trigger="load, every 3s"
+     hx-swap="innerHTML">
   {% include "_watchers.html" %}
 </div>
 
-<h2 style="margin-top:32px">My upcoming bookings</h2>
-<table>
-  <thead>
-    <tr>
-      <th>When</th>
-      <th>Workout</th>
-      <th>Location</th>
-      <th>Coach</th>
-      <th>Status</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for t in tickets %}
-    <tr>
-      <td>{% if t.starts_at %}{{ t.starts_at | local }}{% else %}—{% endif %}</td>
-      <td>{{ t.name }}</td>
-      <td>{{ t.location }}</td>
-      <td>{{ t.coach }}</td>
-      <td>
-        {% if t.is_waitinglist %}
-          <span class="pill waitlist">waitlist</span>
-        {% else %}
-          <span class="pill booked">{{ t.status }}</span>
-        {% endif %}
-      </td>
-    </tr>
+<div class="section-head section-head-spaced">
+  <span>Upcoming bibs</span>
+  <span class="count">{{ "%02d" | format(tickets|length) }}</span>
+</div>
+
+<div class="stack">
+  {% for t in tickets %}
+  <article class="bib-card">
+    {% if t.is_waitinglist %}
+      <div class="tape waitlist">WAITLIST</div>
     {% else %}
-    <tr><td colspan="5" class="muted">No upcoming bookings.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+      <div class="tape">BIB ASSIGNED</div>
+    {% endif %}
+
+    <div>
+      <div class="when">{% if t.starts_at %}{{ t.starts_at | day }} · {{ t.starts_at | time }}{% else %}—{% endif %}</div>
+      <h3>{{ t.name }}</h3>
+      <div class="sub">{{ t.location }} · Coach {{ t.coach }}</div>
+      <div class="status">
+        {% if t.is_waitinglist %}
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+          ON THE LIST · {{ t.status }}
+        {% else %}
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          {{ t.status | upper }}
+        {% endif %}
+      </div>
+    </div>
+  </article>
+  {% else %}
+  <div class="empty">
+    <img src="/static/illustration-stopwatch.svg" alt="">
+    <div class="title">No bibs yet.</div>
+    <div class="sub">Grab a class from the <a href="/" class="grb-link">classes</a> view to get one.</div>
+  </div>
+  {% endfor %}
+</div>
+
 {% endblock %}

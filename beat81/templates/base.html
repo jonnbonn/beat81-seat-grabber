@@ -2,123 +2,31 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Beat81 Grabber</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Grabby — Beat81 spot grabber{% endblock %}</title>
+  <link rel="icon" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/grabby.css">
+  <link rel="stylesheet" href="/static/app.css">
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-  <style>
-    :root {
-      --bg: #0f1115;
-      --panel: #181b22;
-      --border: #2a2f3a;
-      --text: #e8eaed;
-      --muted: #8c93a3;
-      --accent: #ff5e3a;
-      --good: #3ad58a;
-      --warn: #f5a623;
-      --bad: #e0463c;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    header {
-      border-bottom: 1px solid var(--border);
-      padding: 12px 24px;
-      display: flex;
-      align-items: center;
-      gap: 24px;
-    }
-    header h1 { font-size: 16px; margin: 0; letter-spacing: 0.5px; }
-    nav a {
-      color: var(--muted);
-      text-decoration: none;
-      margin-right: 16px;
-      padding: 6px 0;
-      border-bottom: 2px solid transparent;
-    }
-    nav a.active { color: var(--text); border-bottom-color: var(--accent); }
-    main { max-width: 1100px; margin: 24px auto; padding: 0 24px; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td {
-      text-align: left;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-      vertical-align: middle;
-    }
-    th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; }
-    tr:hover td { background: var(--panel); }
-    .pill {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-    }
-    .pill.open { background: rgba(58,213,138,.12); color: var(--good); }
-    .pill.full { background: rgba(224,70,60,.12); color: var(--bad); }
-    .pill.cancelled { background: rgba(140,147,163,.12); color: var(--muted); }
-    .pill.queued { background: rgba(245,166,35,.14); color: var(--warn); }
-    .pill.polling { background: rgba(255,94,58,.14); color: var(--accent); }
-    .pill.booked { background: rgba(58,213,138,.14); color: var(--good); }
-    .pill.waitlist { background: rgba(245,166,35,.14); color: var(--warn); }
-    .pill.offered { background: rgba(255,94,58,.18); color: var(--accent); }
-    .pill.failed, .pill.expired { background: rgba(224,70,60,.14); color: var(--bad); }
-    .pill.cancelled { background: rgba(140,147,163,.14); color: var(--muted); }
-    button, .btn {
-      background: var(--accent);
-      color: white;
-      border: 0;
-      padding: 7px 14px;
-      border-radius: 6px;
-      font-weight: 600;
-      cursor: pointer;
-      font-size: 13px;
-    }
-    button.ghost, .btn.ghost {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--muted);
-    }
-    button:disabled { opacity: 0.4; cursor: not-allowed; }
-    form.inline { display: inline; }
-    .filters {
-      display: flex; gap: 12px; align-items: end; margin-bottom: 16px;
-      padding: 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-    }
-    .filters label { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px; }
-    .filters input, .filters select {
-      background: var(--bg); color: var(--text); border: 1px solid var(--border);
-      padding: 6px 8px; border-radius: 6px; min-width: 100px;
-    }
-    .muted { color: var(--muted); }
-    .small { font-size: 12px; }
-    .hint { color: var(--muted); font-size: 12px; margin-top: 12px; }
-    .log {
-      background: #0a0c10; border: 1px solid var(--border);
-      padding: 8px; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, monospace;
-      font-size: 11px; max-height: 140px; overflow-y: auto; margin-top: 6px;
-    }
-    .err { background: rgba(224,70,60,.1); border: 1px solid var(--bad); padding: 12px; border-radius: 8px; color: var(--bad); margin-bottom: 16px; }
-  </style>
 </head>
 <body>
-  <header>
-    <h1>BEAT81 GRABBER</h1>
-    <nav>
-      <a href="/" class="{% if active_page == 'events' %}active{% endif %}">Events</a>
-      <a href="/bookings" class="{% if active_page == 'bookings' %}active{% endif %}">My bookings &amp; watchers</a>
+  {% if active_page != 'login' %}
+  <header class="grb-header">
+    <a href="/" class="grb-logo" aria-label="Grabby">
+      <img src="/static/logo-wordmark.svg" alt="Grabby">
+    </a>
+    <nav class="grb-nav">
+      <a href="/" class="{% if active_page == 'events' %}active{% endif %}">Classes</a>
+      <a href="/bookings" class="{% if active_page == 'bookings' %}active{% endif %}">Watches &amp; bibs</a>
     </nav>
-    {% if active_page != 'login' %}
-    <form method="post" action="/logout" style="margin-left:auto;">
-      <button type="submit" class="ghost">Log out</button>
+    <div class="grb-spacer"></div>
+    <form method="post" action="/logout" class="inline">
+      <button type="submit" class="btn btn-quiet">Log out</button>
     </form>
-    {% endif %}
   </header>
-  <main>
+  {% endif %}
+
+  <main class="grb-main">
     {% block content %}{% endblock %}
   </main>
 </body>

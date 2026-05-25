@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  
+  <rect x="8" y="8" width="104" height="104" fill="#FF4D1F" stroke="#171410" stroke-width="4"></rect>
+  
+  <circle cx="18" cy="18" r="3" fill="#171410"></circle>
+  <circle cx="102" cy="18" r="3" fill="#171410"></circle>
+  <circle cx="18" cy="102" r="3" fill="#171410"></circle>
+  <circle cx="102" cy="102" r="3" fill="#171410"></circle>
+  <text x="60" y="92" font-family="Big Shoulders Display, Oswald, Impact, sans-serif" font-weight="900" font-size="92" fill="#F5EFE3" text-anchor="middle" letter-spacing="-2">G</text>
+</svg>

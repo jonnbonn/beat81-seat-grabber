@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  
+  <rect x="12" y="12" width="176" height="176" fill="#F5EFE3" stroke="#171410" stroke-width="4"></rect>
+  
+  <circle cx="24" cy="24" r="4" fill="#171410"></circle>
+  <circle cx="176" cy="24" r="4" fill="#171410"></circle>
+  <circle cx="24" cy="176" r="4" fill="#171410"></circle>
+  <circle cx="176" cy="176" r="4" fill="#171410"></circle>
+  
+  <text x="100" y="50" font-family="JetBrains Mono, monospace" font-weight="700" font-size="14" fill="#171410" text-anchor="middle" letter-spacing="2">GRABBY · BIB</text>
+  <line x1="32" y1="58" x2="168" y2="58" stroke="#171410" stroke-width="1.5"></line>
+  
+  <text x="100" y="148" font-family="Big Shoulders Display, Oswald, Impact, sans-serif" font-weight="900" font-size="100" fill="#FF4D1F" text-anchor="middle" letter-spacing="-3">081</text>
+  
+  <line x1="32" y1="158" x2="168" y2="158" stroke="#171410" stroke-width="1.5"></line>
+  <text x="100" y="174" font-family="JetBrains Mono, monospace" font-weight="700" font-size="9" fill="#3A342C" text-anchor="middle" letter-spacing="1.5">FIRST IN LINE</text>
+</svg>

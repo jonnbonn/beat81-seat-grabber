@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  
+  <circle cx="120" cy="120" r="116" fill="#171410"></circle>
+  <circle cx="120" cy="120" r="106" fill="none" stroke="#F5EFE3" stroke-width="2"></circle>
+  <circle cx="120" cy="120" r="78" fill="#FF4D1F"></circle>
+  
+  <defs>
+    <path id="circlepath" d="M 120,120 m -94,0 a 94,94 0 1,1 188,0 a 94,94 0 1,1 -188,0"></path>
+  </defs>
+  <text font-family="JetBrains Mono, monospace" font-weight="700" font-size="13" fill="#F5EFE3" letter-spacing="6">
+    <textPath href="#circlepath" startOffset="0">· GRABBY · EST. 2026 · BERLIN · FIRST IN LINE </textPath>
+  </text>
+  
+  <g transform="translate(120, 120)">
+    <text x="0" y="22" font-family="Big Shoulders Display, Oswald, Impact, sans-serif" font-weight="900" font-size="100" fill="#F5EFE3" text-anchor="middle" letter-spacing="-3">1</text>
+    <text x="0" y="50" font-family="JetBrains Mono, monospace" font-weight="700" font-size="9" fill="#F5EFE3" text-anchor="middle" letter-spacing="2">RANK</text>
+  </g>
+  
+  <text x="60" y="178" font-size="14" fill="#F5C518">★</text>
+  <text x="170" y="178" font-size="14" fill="#F5C518">★</text>
+</svg>

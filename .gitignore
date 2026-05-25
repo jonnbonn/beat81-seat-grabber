@@ -3,6 +3,8 @@
 .env.local
 .env.*.local
 
+.claude
+
 # Python
 __pycache__/
 *.py[cod]
@@ -20,3 +22,4 @@ venv/
 .idea/
 .vscode/
 *.swp
+.gstack/

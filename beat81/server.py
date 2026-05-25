@@ -67,6 +67,14 @@ def _format_local(dt: datetime) -> str:
     return dt.astimezone().strftime("%a %d %b, %H:%M")
 
 
+def _format_day(dt: datetime) -> str:
+    return dt.astimezone().strftime("%a %d %b").upper()
+
+
+def _format_time(dt: datetime) -> str:
+    return dt.astimezone().strftime("%H:%M")
+
+
 def _since(dt: datetime | None) -> str:
     if dt is None:
         return "—"
@@ -81,6 +89,8 @@ def _since(dt: datetime | None) -> str:
 
 
 templates.env.filters["local"] = _format_local
+templates.env.filters["day"] = _format_day
+templates.env.filters["time"] = _format_time
 templates.env.filters["since"] = _since
 
 

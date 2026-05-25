@@ -1,0 +1,263 @@
+/* =========================================================
+   GRABBY — Foundations: Colors & Type
+   ---------------------------------------------------------
+   The visual DNA: warm paper, punchy sprint orange, athletic
+   condensed display type. Import this once at the top of any
+   surface and you're 80% there.
+   ========================================================= */
+
+/* ---- Fonts (Google Fonts — substituted; see README) ---- */
+@import url("https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=JetBrains+Mono:wght@500;700&display=swap");
+
+:root {
+  /* ---------- COLOR ---------- */
+  /* Core paper-and-ink */
+  --paper:        #F5EFE3;   /* warm cream — the default canvas */
+  --paper-2:      #EAE2D2;   /* chalk — secondary surface */
+  --paper-3:      #DCD2BD;   /* deeper chalk — dividers, cards on cards */
+  --ink:          #171410;   /* warm near-black */
+  --ink-2:        #3A342C;   /* smoke — secondary text */
+  --ink-3:        #6B6357;   /* muted text */
+  --ink-4:        #9C9385;   /* hint text / placeholder */
+
+  /* The brand colors */
+  --sprint:       #FF4D1F;   /* primary punch — buttons, accents, energy */
+  --sprint-deep:  #D63A12;   /* sprint pressed / hover-darken */
+  --sprint-soft:  #FFE2D6;   /* sprint tint — backgrounds */
+
+  --court:        #F5C518;   /* highlight yellow — tape, scoreboard, attention */
+  --court-deep:   #C99E0E;
+  --court-soft:   #FBEFC2;
+
+  --pool:         #1C5D8A;   /* deep aquatic blue — info, counter accent */
+  --pool-deep:    #144466;
+  --pool-soft:    #D6E5F0;
+
+  --pulse:        #E83C72;   /* magenta pink — rare accent, "spicy" tag */
+  --pulse-soft:   #FBD9E4;
+
+  --grass:        #2E7D4F;   /* a "you made it in" green */
+  --grass-soft:   #D6EADD;
+
+  /* Semantic */
+  --bg:           var(--paper);
+  --bg-elev:      #FBF7EE;   /* a touch lighter than paper for cards */
+  --bg-sunken:    var(--paper-2);
+  --fg:           var(--ink);
+  --fg-muted:     var(--ink-2);
+  --fg-faint:     var(--ink-3);
+  --fg-hint:      var(--ink-4);
+  --line:         #C8BEA9;   /* default border on cream */
+  --line-strong:  var(--ink);
+  --link:         var(--sprint);
+
+  --success:      var(--grass);
+  --warning:      var(--court-deep);
+  --danger:       var(--sprint);
+  --info:         var(--pool);
+
+  /* ---------- TYPE ---------- */
+  --font-display: "Big Shoulders Display", "Oswald", "Impact", system-ui, sans-serif;
+  --font-body:    "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* Display scale — for the athletic-poster moments */
+  --fs-mega:    clamp(72px, 12vw, 184px);  /* hero headline */
+  --fs-huge:    clamp(56px, 8vw, 112px);   /* big section opener */
+  --fs-h1:      clamp(40px, 5vw, 64px);    /* page H1 (display face) */
+  --fs-h2:      clamp(28px, 3.2vw, 40px);  /* section H2 (display face) */
+  --fs-h3:      24px;                       /* sub-section (body bold OR display) */
+  --fs-h4:      18px;                       /* card titles */
+
+  --fs-body:    16px;
+  --fs-body-lg: 18px;
+  --fs-small:   14px;
+  --fs-tiny:    12px;
+  --fs-micro:   11px;
+
+  /* Line-heights tuned for each face */
+  --lh-display: 0.92;   /* condensed display likes to stack tight */
+  --lh-tight:   1.1;
+  --lh-body:    1.5;
+  --lh-loose:   1.65;
+
+  /* Tracking */
+  --tr-display: -0.01em;
+  --tr-eyebrow: 0.14em;   /* the all-caps "eyebrow" label tracking */
+  --tr-button:  0.04em;
+  --tr-body:    0;
+
+  /* ---------- SPACE ---------- */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+  --s-20: 80px;
+  --s-24: 96px;
+  --s-32: 128px;
+
+  /* ---------- RADII ---------- */
+  /* Grabby is sharp-decisive on cards & containers, friendly-round on pills */
+  --r-0: 0;
+  --r-1: 2px;     /* "tape" feel — barely there */
+  --r-2: 4px;     /* cards, inputs */
+  --r-3: 8px;     /* modals */
+  --r-4: 12px;    /* media */
+  --r-pill: 999px;
+
+  /* ---------- SHADOWS / ELEVATION ---------- */
+  /* Quiet on cream — never blue/cool. All shadows warm-ink-tinted. */
+  --shadow-1: 0 1px 0 rgba(23,20,16,0.06), 0 1px 2px rgba(23,20,16,0.04);
+  --shadow-2: 0 2px 0 rgba(23,20,16,0.05), 0 4px 12px rgba(23,20,16,0.08);
+  --shadow-3: 0 4px 0 rgba(23,20,16,0.06), 0 12px 28px rgba(23,20,16,0.12);
+  /* The "stamp" — a sharp downward shadow that gives the patch/sticker feel */
+  --shadow-stamp: 4px 4px 0 var(--ink);
+  --shadow-stamp-sprint: 4px 4px 0 var(--sprint);
+  --shadow-stamp-court:  4px 4px 0 var(--court);
+
+  /* ---------- MOTION ---------- */
+  --ease-out:   cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-in:    cubic-bezier(0.6, 0, 0.8, 0.3);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);  /* the bounce */
+  --dur-1:  120ms;   /* hover */
+  --dur-2:  200ms;   /* press */
+  --dur-3:  320ms;   /* enter */
+  --dur-4:  500ms;   /* the dramatic moment */
+}
+
+/* =========================================================
+   Semantic element styles
+   ========================================================= */
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Display headlines — condensed, all-caps by default. Override per-instance. */
+h1, .h1, .grb-h1 {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: var(--fs-h1);
+  line-height: var(--lh-display);
+  letter-spacing: var(--tr-display);
+  text-transform: uppercase;
+  margin: 0;
+}
+h2, .h2, .grb-h2 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--fs-h2);
+  line-height: var(--lh-display);
+  letter-spacing: var(--tr-display);
+  text-transform: uppercase;
+  margin: 0;
+}
+h3, .h3, .grb-h3 {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: var(--fs-h3);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.005em;
+  margin: 0;
+}
+h4, .h4, .grb-h4 {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--fs-h4);
+  line-height: var(--lh-tight);
+  margin: 0;
+}
+
+.grb-mega {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: var(--fs-mega);
+  line-height: var(--lh-display);
+  letter-spacing: -0.015em;
+  text-transform: uppercase;
+}
+
+.grb-huge {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: var(--fs-huge);
+  line-height: var(--lh-display);
+  letter-spacing: -0.012em;
+  text-transform: uppercase;
+}
+
+/* Eyebrow — the all-caps tracking label */
+.grb-eyebrow {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: var(--fs-tiny);
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+/* Body styles */
+p, .grb-p {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--fg);
+  text-wrap: pretty;
+}
+.grb-lead {
+  font-size: var(--fs-body-lg);
+  line-height: 1.45;
+  color: var(--fg);
+}
+small, .grb-small {
+  font-size: var(--fs-small);
+  color: var(--fg-muted);
+}
+.grb-mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  letter-spacing: 0;
+}
+
+a, .grb-link {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--sprint);
+  transition: color var(--dur-1) var(--ease-out);
+}
+a:hover, .grb-link:hover { color: var(--sprint-deep); }
+
+/* The "bib number" — a chunky tabular number callout */
+.grb-bib {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-feature-settings: "tnum" 1;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+/* The "scoreboard" mono — for timers, countdowns, ticker */
+.grb-score {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+::selection {
+  background: var(--court);
+  color: var(--ink);
+}

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" preserveAspectRatio="xMidYMid slice">
+  
+  <defs>
+    <pattern id="halftone" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
+      <circle cx="7" cy="7" r="3.2" fill="#171410"></circle>
+    </pattern>
+  </defs>
+  <rect width="200" height="200" fill="url(#halftone)"></rect>
+</svg>

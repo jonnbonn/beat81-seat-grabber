@@ -1,42 +1,56 @@
-<table>
-  <thead>
-    <tr>
-      <th>When</th>
-      <th>Workout</th>
-      <th>State</th>
-      <th>Seats</th>
-      <th>Last poll</th>
-      <th>Message</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for w in watchers %}
-    <tr>
-      <td>{{ w.event_starts_at | local }}</td>
-      <td>{{ w.event_label }}</td>
-      <td><span class="pill {{ w.state }}">{{ w.state }}</span></td>
-      <td>
+{# Active watchers fragment — polled every 3s by HTMX from bookings.html #}
+{% set state_map = {
+  'queued':    {'pill': 'warming',  'label': 'Warming up',   'pulse': false, 'terminal': false},
+  'sleeping':  {'pill': 'warming',  'label': 'Warming up',   'pulse': false, 'terminal': false},
+  'polling':   {'pill': 'watching', 'label': 'Watching',     'pulse': true,  'terminal': false},
+  'waitlist':  {'pill': 'waitlist', 'label': 'On waitlist',  'pulse': true,  'terminal': false},
+  'offered':   {'pill': 'watching', 'label': 'Grabbing now', 'pulse': true,  'terminal': false},
+  'booked':    {'pill': 'bib',      'label': 'Bib assigned', 'pulse': false, 'terminal': true},
+  'failed':    {'pill': 'tough',    'label': 'Tough crowd',  'pulse': false, 'terminal': true},
+  'expired':   {'pill': 'tough',    'label': 'Tough crowd',  'pulse': false, 'terminal': true},
+  'cancelled': {'pill': 'stopped',  'label': 'Stopped',      'pulse': false, 'terminal': true},
+} %}
+
+{% for w in watchers %}
+  {% set m = state_map.get(w.state, {'pill':'stopped','label':w.state,'pulse':false,'terminal':true}) %}
+  <article class="watch-card">
+    <div>
+      <div class="head">
+        <span class="pill {{ m.pill }}">
+          <span class="dot{% if m.pulse %} pulsing{% endif %}"></span>{{ m.label }}
+        </span>
+        <span class="when">{{ w.event_starts_at | day }} · {{ w.event_starts_at | time }}</span>
+      </div>
+      <h3>{{ w.event_label }}</h3>
+      <div class="meta">
         {% if w.last_seen_capacity %}
-          {{ w.last_seen_capacity[0] }}/{{ w.last_seen_capacity[1] }}
-        {% else %}—{% endif %}
-      </td>
-      <td class="small muted">{{ w.last_polled_at | since }}</td>
-      <td class="small muted">{{ w.message }}</td>
-      <td>
-        {% if w.state in ['queued','sleeping','polling','waitlist','offered'] %}
-          <form class="inline" method="post" action="/watchers/{{ w.event_id }}/cancel">
-            <button type="submit" class="ghost">Cancel</button>
-          </form>
-        {% else %}
-          <form class="inline" method="post" action="/watchers/{{ w.event_id }}/remove">
-            <button type="submit" class="ghost">Clear</button>
-          </form>
+          <span><strong>{{ w.last_seen_capacity[0] }}/{{ w.last_seen_capacity[1] }}</strong> seats</span>
+          <span class="sep">·</span>
         {% endif %}
-      </td>
-    </tr>
-    {% else %}
-    <tr><td colspan="7" class="muted">No active watchers. Click <em>Book</em> on an event to start one.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+        <span>last poll <strong>{{ w.last_polled_at | since }}</strong></span>
+        {% if w.message %}
+          <span class="sep">·</span>
+          <span class="msg">{{ w.message }}</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="watch-actions">
+      {% if not m.terminal %}
+        <form class="inline" method="post" action="/watchers/{{ w.event_id }}/cancel">
+          <button type="submit" class="btn btn-quiet btn-tiny">Cancel &#x21A9;</button>
+        </form>
+      {% else %}
+        <form class="inline" method="post" action="/watchers/{{ w.event_id }}/remove">
+          <button type="submit" class="btn btn-quiet btn-tiny">Clear</button>
+        </form>
+      {% endif %}
+    </div>
+  </article>
+{% else %}
+  <div class="empty">
+    <img src="/static/illustration-runner.svg" alt="">
+    <div class="title">Nothing on watch.</div>
+    <div class="sub">Pick a class on the <a href="/" class="grb-link">classes</a> page to start a watch.</div>
+  </div>
+{% endfor %}

@@ -1,67 +1,96 @@
 {% extends "base.html" %}
+{% block title %}Grabby — classes{% endblock %}
 {% block content %}
+
+<div class="grb-topbar">
+  <div>
+    <div class="grb-eyebrow">· UPCOMING · {{ events|length }} CLASSES</div>
+    <h1>Pick a fight<br>with gravity.</h1>
+  </div>
+</div>
+
 <form class="filters" method="get" action="/">
-  <div>
-    <label for="city">City code</label>
-    <input id="city" name="city" value="{{ city }}" placeholder="BER, MUC, …">
+  <div class="field filter-city">
+    <label class="field-label" for="city">City</label>
+    <input id="city" name="city" class="input" value="{{ city }}" placeholder="BER, MUC, …">
   </div>
-  <div>
-    <label for="days">Days ahead</label>
-    <input id="days" name="days" type="number" min="1" max="14" value="{{ days }}">
+  <div class="field filter-days">
+    <label class="field-label" for="days">Days ahead</label>
+    <input id="days" name="days" type="number" min="1" max="14" value="{{ days }}" class="input">
   </div>
-  <button type="submit">Filter</button>
-  <span class="hint" style="margin-left:auto">Polling starts {{ time_before_min }} min before each class.</span>
+  <button type="submit" class="btn filter-submit">Filter</button>
+  <span class="filter-hint">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+    Polling starts {{ time_before_min }} min before each class.
+  </span>
 </form>
 
-<table>
-  <thead>
-    <tr>
-      <th>When</th>
-      <th>Workout</th>
-      <th>Location</th>
-      <th>Coach</th>
-      <th>Seats</th>
-      <th>Status</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for ev in events %}
-    <tr>
-      <td>{{ ev.starts_at | local }}</td>
-      <td>{{ ev.name }}</td>
-      <td>{{ ev.location }}</td>
-      <td>{{ ev.coach }}</td>
-      <td>{{ ev.current }}/{{ ev.max }}</td>
-      <td>
-        {% if ev.is_cancelled %}
-          <span class="pill cancelled">cancelled</span>
-        {% elif ev.is_full %}
-          <span class="pill full">full</span>
+{% set day_ns = namespace(current='', open=false) %}
+{% for ev in events %}
+  {% set ev_day = ev.starts_at | day %}
+  {% if ev_day != day_ns.current %}
+    {% if day_ns.open %}</div>{% endif %}
+    <div class="day-header">
+      <span class="day-title">{{ ev_day }}</span>
+      <span class="day-count"></span>
+    </div>
+    <div class="stack">
+    {% set day_ns.current = ev_day %}
+    {% set day_ns.open = true %}
+  {% endif %}
+
+  <article class="card event-card">
+    <div class="when">
+      <span class="when-time">{{ ev.starts_at | time }}</span>
+    </div>
+
+    <div class="title-block">
+      <h3 class="title">{{ ev.name }}</h3>
+      <div class="sub">{{ ev.location }} · Coach {{ ev.coach }}</div>
+    </div>
+
+    <div class="seats">
+      <div class="grb-score">{{ ev.current }}<span class="seat-sep">/</span>{{ ev.max }}</div>
+      <div class="seats-label">seats</div>
+    </div>
+
+    <div class="actions">
+      {% if ev.is_cancelled %}
+        <span class="pill cancelled"><span class="dot"></span>Cancelled</span>
+      {% elif ev.watcher_state == 'booked' %}
+        <span class="pill bib"><span class="dot"></span>Bib assigned</span>
+      {% elif ev.watcher_state in ['queued','sleeping'] %}
+        <span class="pill warming"><span class="dot"></span>Warming up</span>
+        <a class="btn btn-quiet btn-tiny" href="/bookings">View</a>
+      {% elif ev.watcher_state in ['polling','offered'] %}
+        <span class="pill watching"><span class="dot pulsing"></span>Watching</span>
+        <a class="btn btn-quiet btn-tiny" href="/bookings">View</a>
+      {% elif ev.watcher_state == 'waitlist' %}
+        <span class="pill waitlist"><span class="dot"></span>Waitlist</span>
+        <a class="btn btn-quiet btn-tiny" href="/bookings">View</a>
+      {% elif ev.watcher_state in ['failed','expired'] %}
+        <span class="pill tough"><span class="dot"></span>Tough crowd</span>
+      {% else %}
+        {% if ev.is_full %}
+          <span class="pill full"><span class="dot"></span>Full</span>
         {% else %}
-          <span class="pill open">open</span>
+          <span class="pill open"><span class="dot"></span>Open</span>
         {% endif %}
-        {% if ev.watcher_state %}
-          <span class="pill {{ ev.watcher_state }}">{{ ev.watcher_state }}</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if ev.is_cancelled %}
-          <button disabled>—</button>
-        {% elif ev.watcher_state in ['queued','sleeping','polling','waitlist','offered'] %}
-          <a class="btn ghost" href="/bookings">Watching…</a>
-        {% elif ev.watcher_state == 'booked' %}
-          <span class="pill booked">booked</span>
-        {% else %}
-          <form class="inline" method="post" action="/grab/{{ ev.id }}">
-            <button type="submit">{% if ev.is_full %}Watch &amp; book{% else %}Book{% endif %}</button>
-          </form>
-        {% endif %}
-      </td>
-    </tr>
-    {% else %}
-    <tr><td colspan="7" class="muted">No events in range.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+        <form class="inline" method="post" action="/grab/{{ ev.id }}">
+          <button type="submit" class="btn btn-primary">
+            {% if ev.is_full %}Watch &amp; grab &rarr;{% else %}Grab my spot &rarr;{% endif %}
+          </button>
+        </form>
+      {% endif %}
+    </div>
+  </article>
+{% else %}
+  <div class="empty">
+    <img src="/static/illustration-runner.svg" alt="">
+    <div class="title">Rest day.</div>
+    <div class="sub">Nothing here. Widen the window or change the city.</div>
+  </div>
+{% endfor %}
+{% if day_ns.open %}</div>{% endif %}
+
 {% endblock %}

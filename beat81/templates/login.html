@@ -1,29 +1,43 @@
 {% extends "base.html" %}
+{% block title %}Grabby — log in{% endblock %}
 {% block content %}
-<div style="max-width: 380px; margin: 80px auto 0; padding: 24px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;">
-  <h2 style="margin: 0 0 16px 0;">Log in to Beat81</h2>
-  {% if error %}<div class="err">{{ error }}</div>{% endif %}
-  <form method="post" action="/login">
-    <div style="margin-bottom: 12px;">
-      <label for="email" style="display:block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px;">Email</label>
-      <input id="email" name="email" type="email" required autofocus autocomplete="username"
-        style="width:100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 8px 10px; border-radius: 6px;">
-    </div>
-    <div style="margin-bottom: 16px;">
-      <label for="password" style="display:block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px;">Password</label>
-      <input id="password" name="password" type="password" required autocomplete="current-password"
-        style="width:100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 8px 10px; border-radius: 6px;">
-    </div>
-    <label style="display:flex; align-items:center; gap:8px; margin-bottom: 16px; color: var(--muted); font-size: 13px;">
-      <input type="checkbox" name="remember" value="1" checked>
-      Stay logged in (keeps watchers running &gt;24 h)
-    </label>
-    <button type="submit" style="width:100%;">Log in</button>
-  </form>
-  <p class="hint" style="margin-top: 16px;">
-    Credentials go to <code>api.production.b81.io</code>. With "Stay logged in" your encrypted
-    credentials are stored in an httpOnly cookie so the backend can transparently re-auth when the
-    Beat81 JWT expires (~24 h).
-  </p>
+<div class="login-shell">
+  <div class="login-card">
+    <div class="grb-eyebrow login-eyebrow">· GRABBY · BEAT81 GRABBER</div>
+    <h1>Let's get<br>you in.</h1>
+    <p class="sub">Sign in with your Beat81 credentials. We watch — you rest.</p>
+
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+    <form method="post" action="/login" class="stack" style="gap:14px">
+      <div class="field">
+        <label for="email" class="field-label">Email</label>
+        <input id="email" name="email" type="email" class="input"
+               required autofocus autocomplete="username"
+               placeholder="you@studio.com">
+      </div>
+      <div class="field">
+        <label for="password" class="field-label">Password</label>
+        <input id="password" name="password" type="password" class="input"
+               required autocomplete="current-password"
+               placeholder="••••••••">
+      </div>
+
+      <label class="check-row">
+        <input type="checkbox" name="remember" value="1" checked>
+        Keep me signed in (so watches survive overnight)
+      </label>
+
+      <button type="submit" class="btn btn-primary btn-stamp btn-block">
+        Log in &rarr;
+      </button>
+    </form>
+
+    <p class="footnote">
+      Credentials go straight to <code>api.production.b81.io</code>. With "Keep me signed in",
+      we store your encrypted credentials in an httpOnly cookie so the backend can transparently
+      re-auth when the Beat81 JWT expires (~24h).
+    </p>
+  </div>
 </div>
 {% endblock %}
